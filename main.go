@@ -11,7 +11,19 @@ import (
 	"os"
 )
 
-// Carregar imagem PNG em grayscale
+// explicação dos algoritmos
+// marr-hildreth:
+// também conhecido como laplacian of gaussian (LoG)
+// ele combina suavização de bordas baseada na segunda derivada da intensidade da imagem..
+// primeiramente, ele aplica o método gaussiano para reduzir ruídos.
+// depois, ele aplica o laplace (segunda derivada)
+// ele detecta bordas em todas as direções. de forma isotrópica.
+// pode gerar "loops" em regiões com gradientes suaves.
+// canny:
+// é conhecido como o padrão-ouro para detectar bordas.
+// calcula gradientes usando operadores (sobel)
+// mantém apenas os pixels onde tem a magnitude máxima.
+
 func loadImage(filename string) *image.Gray {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -35,7 +47,6 @@ func loadImage(filename string) *image.Gray {
 	return gray
 }
 
-// Função para salvar uma imagem PNG
 func saveImage(path string, img image.Image) {
 	file, err := os.Create(path)
 	if err != nil {
@@ -48,7 +59,6 @@ func saveImage(path string, img image.Image) {
 	}
 }
 
-// Aplica um kernel de convolução
 func applyConvolution(img *image.Gray, kernel [][]float64, normalize float64) *image.Gray {
 	width, height := img.Bounds().Dx(), img.Bounds().Dy()
 	newImg := image.NewGray(img.Bounds())
@@ -69,7 +79,6 @@ func applyConvolution(img *image.Gray, kernel [][]float64, normalize float64) *i
 	return newImg
 }
 
-// Canny Edge Detection (usando Sobel)
 func cannyEdgeDetection(img *image.Gray) *image.Gray {
 	sobelX := [][]float64{
 		{-1, 0, 1},
@@ -107,7 +116,6 @@ func otsuThreshold(img *image.Gray) *image.Gray {
 	width, height := img.Bounds().Dx(), img.Bounds().Dy()
 	totalPixels := width * height
 
-	// Construindo o histograma
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			grayValue := img.GrayAt(x, y).Y
@@ -135,7 +143,6 @@ func otsuThreshold(img *image.Gray) *image.Gray {
 		mB := sumB / wB
 		mF := (sum - sumB) / wF
 
-		// Cálculo da variância entre classes
 		varBetween := wB * wF * math.Pow(mB-mF, 2)
 		if varBetween > varMax {
 			varMax = varBetween
@@ -143,14 +150,13 @@ func otsuThreshold(img *image.Gray) *image.Gray {
 		}
 	}
 
-	// Aplicando limiarização na imagem com o threshold encontrado
 	newImg := image.NewGray(img.Bounds())
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			if img.GrayAt(x, y).Y > threshold {
-				newImg.SetGray(x, y, color.Gray{255}) // Branco
+				newImg.SetGray(x, y, color.Gray{255})
 			} else {
-				newImg.SetGray(x, y, color.Gray{0}) // Preto
+				newImg.SetGray(x, y, color.Gray{0})
 			}
 		}
 	}
@@ -158,23 +164,20 @@ func otsuThreshold(img *image.Gray) *image.Gray {
 	return newImg
 }
 
-// Marr-Hildreth (Laplaciano do Gaussiano)
 func marrHildreth(img *image.Gray) *image.Gray {
 	laplacianKernel := [][]float64{
 		{0, 1, 0},
-		{1, -1, 1},
+		{1, -4, 1},
 		{0, 1, 0},
 	}
 	return applyConvolution(img, laplacianKernel, 1)
 }
 
-// Watershed simplificado
 func watershed(img *image.Gray, bgPercentage float64) *image.Gray {
 	if bgPercentage < 0 || bgPercentage > 1 {
 		panic("bgPercentage deve estar entre 0 e 1")
 	}
 
-	// Criar um histograma dos tons de cinza da imagem
 	var histogram [256]int
 	totalPixels := img.Bounds().Dx() * img.Bounds().Dy()
 
@@ -185,7 +188,6 @@ func watershed(img *image.Gray, bgPercentage float64) *image.Gray {
 		}
 	}
 
-	// Determinar o novo limiar com base na porcentagem
 	targetPixels := int(float64(totalPixels) * bgPercentage)
 	sum := 0
 	bgThreshold := 0
@@ -198,15 +200,14 @@ func watershed(img *image.Gray, bgPercentage float64) *image.Gray {
 		}
 	}
 
-	// Criar a imagem invertida
 	inverted := image.NewGray(img.Bounds())
 
 	for y := 0; y < img.Bounds().Dy(); y++ {
 		for x := 0; x < img.Bounds().Dx(); x++ {
 			if img.GrayAt(x, y).Y >= uint8(bgThreshold) {
-				inverted.SetGray(x, y, color.Gray{0}) // Fundo
+				inverted.SetGray(x, y, color.Gray{0})
 			} else {
-				inverted.SetGray(x, y, color.Gray{255}) // Primeiro plano
+				inverted.SetGray(x, y, color.Gray{255})
 			}
 		}
 	}
@@ -216,53 +217,135 @@ func watershed(img *image.Gray, bgPercentage float64) *image.Gray {
 
 // questao 3
 func countObjects(img *image.Gray) int {
-	width, height := img.Bounds().Dx(), img.Bounds().Dy()
-	visited := make([][]bool, height)
+	smoothImg := image.NewGray(img.Bounds())
+	for x := 1; x < img.Bounds().Dx()-1; x++ {
+		for y := 1; y < img.Bounds().Dy()-1; y++ {
+			var sum int
+			count := 0
+			for i := -1; i <= 1; i++ {
+				for j := -1; j <= 1; j++ {
+					sum += int(img.GrayAt(x+i, y+j).Y)
+					count++
+				}
+			}
+			smoothImg.SetGray(x, y, color.Gray{uint8(sum / count)})
+		}
+	}
 
+	kernel := [][]int{
+		{1, 1, 1, 1, 1, 1, 1},
+		{1, 1, 1, 1, 1, 1, 1},
+		{1, 1, 1, 1, 1, 1, 1},
+		{1, 1, 1, 1, 1, 1, 1},
+		{1, 1, 1, 1, 1, 1, 1},
+		{1, 1, 1, 1, 1, 1, 1},
+		{1, 1, 1, 1, 1, 1, 1},
+	}
+
+	erode := func(src *image.Gray) *image.Gray {
+		result := image.NewGray(src.Bounds())
+		offset := len(kernel) / 2
+		for x := offset; x < src.Bounds().Dx()-offset; x++ {
+			for y := offset; y < src.Bounds().Dy()-offset; y++ {
+				fits := true
+				for i := -offset; i <= offset && fits; i++ {
+					for j := -offset; j <= offset && fits; j++ {
+						if kernel[i+offset][j+offset] == 1 && src.GrayAt(x+i, y+j).Y != 0 {
+							fits = false
+						}
+					}
+				}
+				if fits {
+					result.SetGray(x, y, color.Gray{0})
+				} else {
+					result.SetGray(x, y, color.Gray{255})
+				}
+			}
+		}
+		return result
+	}
+
+	dilate := func(src *image.Gray) *image.Gray {
+		result := image.NewGray(src.Bounds())
+		offset := len(kernel) / 2
+		for x := offset; x < src.Bounds().Dx()-offset; x++ {
+			for y := offset; y < src.Bounds().Dy()-offset; y++ {
+				hasBlack := false
+				for i := -offset; i <= offset && !hasBlack; i++ {
+					for j := -offset; j <= offset && !hasBlack; j++ {
+						if kernel[i+offset][j+offset] == 1 && src.GrayAt(x+i, y+j).Y == 0 {
+							hasBlack = true
+						}
+					}
+				}
+				if hasBlack {
+					result.SetGray(x, y, color.Gray{0})
+				} else {
+					result.SetGray(x, y, color.Gray{255})
+				}
+			}
+		}
+		return result
+	}
+
+	temp := erode(smoothImg)
+	eroded := erode(temp)
+	temp = dilate(eroded)
+	temp = dilate(temp)
+	opened := dilate(temp)
+
+	temp = dilate(opened)
+	temp = dilate(temp)
+	dilated := dilate(temp)
+	temp = erode(dilated)
+	temp = erode(temp)
+	closed := erode(temp)
+
+	width, height := closed.Bounds().Dx(), closed.Bounds().Dy()
+	visited := make([][]bool, height)
 	for i := range visited {
 		visited[i] = make([]bool, width)
 	}
 
 	var directions = [][2]int{
-		{-1, 0}, {1, 0}, {0, -1}, {0, 1}, // Cima, Baixo, Esquerda, Direita
-		{-1, -1}, {-1, 1}, {1, -1}, {1, 1}, // Diagonais
+		{-1, 0}, {1, 0}, {0, -1}, {0, 1},
+		{-1, -1}, {-1, 1}, {1, -1}, {1, 1},
 	}
 
+	const minArea = 10
 	var count int
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
-			// Se já foi visitado ou é fundo branco, ignora
-			if visited[y][x] || img.GrayAt(x, y).Y == 255 {
+			if visited[y][x] || closed.GrayAt(x, y).Y == 255 {
 				continue
 			}
 
-			// Encontramos um novo objeto
-			count++
-			stack := [][2]int{{x, y}} // Pilha para DFS
+			area := 0
+			stack := [][2]int{{x, y}}
 
-			// Flood Fill (DFS) para marcar todo o objeto como visitado
 			for len(stack) > 0 {
 				px, py := stack[len(stack)-1][0], stack[len(stack)-1][1]
-				stack = stack[:len(stack)-1] // Pop
+				stack = stack[:len(stack)-1]
 
-				// Se já foi visitado, pula
 				if visited[py][px] {
 					continue
 				}
 
 				visited[py][px] = true
+				area++
 
-				// Verifica todos os pixels vizinhos
 				for _, d := range directions {
 					nx, ny := px+d[0], py+d[1]
-
-					// Se dentro dos limites e não visitado, adiciona na pilha
 					if nx >= 0 && ny >= 0 && nx < width && ny < height {
-						if !visited[ny][nx] && img.GrayAt(nx, ny).Y == 0 { // Apenas pixels pretos
+						if !visited[ny][nx] && closed.GrayAt(nx, ny).Y == 0 {
 							stack = append(stack, [2]int{nx, ny})
 						}
 					}
 				}
+			}
+
+			if area >= minArea {
+				count++
 			}
 		}
 	}
@@ -271,7 +354,6 @@ func countObjects(img *image.Gray) int {
 }
 
 // QUESTAO CADEIA DE FREEMAN
-// freemanChainCode gera o código de cadeia de Freeman para o primeiro objeto encontrado na imagem
 func freemanChainCode(img *image.Gray) string {
 	width, height := img.Bounds().Dx(), img.Bounds().Dy()
 	visited := make([][]bool, height)
@@ -279,7 +361,6 @@ func freemanChainCode(img *image.Gray) string {
 		visited[i] = make([]bool, width)
 	}
 
-	// Direções do código de Freeman (0 a 7, sentido horário, começando da direita)
 	directions := [][2]int{
 		{1, 0},   // 0: Direita
 		{1, -1},  // 1: Diagonal superior direita
@@ -291,7 +372,6 @@ func freemanChainCode(img *image.Gray) string {
 		{1, 1},   // 7: Diagonal inferior direita
 	}
 
-	// Encontrar o ponto inicial (primeiro pixel preto)
 	var startX, startY int
 	found := false
 	for y := 0; y < height && !found; y++ {
@@ -307,19 +387,16 @@ func freemanChainCode(img *image.Gray) string {
 		return "Nenhum objeto encontrado"
 	}
 
-	// Armazenar o código de cadeia
 	var chain []int
 	currentX, currentY := startX, startY
 	visited[currentY][currentX] = true
 
-	// Direção inicial (arbitrariamente começamos olhando para a direita)
 	prevDir := 0
 
 	for {
 		nextDir := -1
 		nextX, nextY := 0, 0
 
-		// Verificar as 8 direções a partir da direção anterior
 		for i := 0; i < 8; i++ {
 			dir := (prevDir + i) % 8 // Explorar em ordem a partir da direção anterior
 			nx := currentX + directions[dir][0]
@@ -332,7 +409,6 @@ func freemanChainCode(img *image.Gray) string {
 			}
 		}
 
-		// Se não encontrou próximo pixel, contorno concluído
 		if nextDir == -1 {
 			break
 		}
@@ -343,7 +419,6 @@ func freemanChainCode(img *image.Gray) string {
 		prevDir = (nextDir + 4) % 8 // Direção oposta para manter continuidade
 	}
 
-	// Converter o código de cadeia para string
 	chainStr := ""
 	for _, dir := range chain {
 		chainStr += fmt.Sprintf("%d", dir)
@@ -359,7 +434,6 @@ func applyBoxFilter(img image.Image, size int) image.Image {
 	height := bounds.Dy()
 	filteredImg := image.NewGray(bounds)
 
-	// Função auxiliar para calcular a média de uma janela
 	average := func(x, y, size int) uint8 {
 		var sum int
 		var count int
@@ -376,14 +450,11 @@ func applyBoxFilter(img image.Image, size int) image.Image {
 				}
 			}
 		}
-		// Retorna a média dos valores na janela
 		return uint8(sum / count)
 	}
 
-	// Aplica o filtro box para cada pixel
 	for x := 0; x < width; x++ {
 		for y := 0; y < height; y++ {
-			// Calcular o valor médio para a janela de tamanho 'size' em (x, y)
 			avg := average(x, y, size)
 			filteredImg.Set(x, y, color.Gray{Y: avg})
 		}
@@ -447,7 +518,7 @@ func main() {
 
 	fmt.Println("Aplicando Watershed...")
 
-	watershedImg := watershed(img, 0.2)
+	watershedImg := watershed(img, 0.7)
 	saveImage("watershed.png", watershedImg)
 
 	fmt.Println("Processamento concluído! Imagens geradas:")
